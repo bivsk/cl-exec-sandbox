@@ -107,6 +107,13 @@
                  (sandbox-plan-arguments plan))
            arguments)))
 
+(defun execute--terminate-process (process)
+  "Urgently terminate and reap PROCESS after an interrupted execution."
+  (when (ignore-errors (uiop:process-alive-p process))
+    (ignore-errors (uiop:terminate-process process :urgent t)))
+  (ignore-errors (uiop:wait-process process))
+  nil)
+
 (defun execute--run-plan
     (plan input timeout merge-output-p output-limit error-output-limit)
   "Run PLAN with INPUT, TIMEOUT, and capture limits, returning a result."
@@ -114,45 +121,55 @@
                              :prefix "cl-exec-sandbox-output-")
     (uiop:with-temporary-file (:pathname error-path
                                :prefix "cl-exec-sandbox-error-")
-      (let* ((started (/ (get-internal-real-time)
-                         (coerce internal-time-units-per-second 'double-float)))
-             (process
-               (handler-case
-                   (execute--launch-plan plan input output-path error-path
-                                         merge-output-p)
-                 (error (condition)
-                   (error 'sandbox-execution-error
-                          :message (format nil "Could not launch sandbox: ~A" condition)
-                          :command
-                          (cons (uiop:native-namestring
-                                 (sandbox-plan-program plan))
-                                (sandbox-plan-arguments plan))))))
-             (timed-out-p nil))
-        (loop while (uiop:process-alive-p process)
-              for elapsed = (- (/ (get-internal-real-time)
-                                  (coerce internal-time-units-per-second
-                                          'double-float))
-                               started)
-              do (when (and timeout (>= elapsed timeout))
-                   (setf timed-out-p t)
-                   (uiop:terminate-process process :urgent t)
-                   (return))
-                 (sleep 0.01))
-        (let ((exit-code (uiop:wait-process process))
-              (finished (/ (get-internal-real-time)
-                           (coerce internal-time-units-per-second 'double-float))))
-          (multiple-value-bind (output output-truncated-p)
-              (execute--read-file output-path output-limit)
-            (multiple-value-bind (error-output error-output-truncated-p)
-                (execute--read-file error-path error-output-limit)
-              (make-instance 'sandbox-result
-                             :exit-code exit-code
-                             :output output
-                             :output-truncated-p output-truncated-p
-                             :error-output error-output
-                             :error-output-truncated-p error-output-truncated-p
-                             :timed-out-p timed-out-p
-                             :real-seconds (- finished started)))))))))
+      (let ((started (/ (get-internal-real-time)
+                        (coerce internal-time-units-per-second 'double-float)))
+            (process nil)
+            (reaped-p nil)
+            (timed-out-p nil))
+        (unwind-protect
+             (progn
+               (setf process
+                     (handler-case
+                         (execute--launch-plan plan input output-path error-path
+                                               merge-output-p)
+                       (error (condition)
+                         (error 'sandbox-execution-error
+                                :message
+                                (format nil "Could not launch sandbox: ~A" condition)
+                                :command
+                                (cons (uiop:native-namestring
+                                       (sandbox-plan-program plan))
+                                      (sandbox-plan-arguments plan))))))
+               (loop while (uiop:process-alive-p process)
+                     for elapsed = (- (/ (get-internal-real-time)
+                                         (coerce internal-time-units-per-second
+                                                 'double-float))
+                                      started)
+                     do (when (and timeout (>= elapsed timeout))
+                          (setf timed-out-p t)
+                          (uiop:terminate-process process :urgent t)
+                          (return))
+                        (sleep 0.01))
+               (let ((exit-code (uiop:wait-process process))
+                     (finished
+                       (/ (get-internal-real-time)
+                          (coerce internal-time-units-per-second 'double-float))))
+                 (setf reaped-p t)
+                 (multiple-value-bind (output output-truncated-p)
+                     (execute--read-file output-path output-limit)
+                   (multiple-value-bind (error-output error-output-truncated-p)
+                       (execute--read-file error-path error-output-limit)
+                     (make-instance
+                      'sandbox-result
+                      :exit-code exit-code
+                      :output output
+                      :output-truncated-p output-truncated-p
+                      :error-output error-output
+                      :error-output-truncated-p error-output-truncated-p
+                      :timed-out-p timed-out-p
+                      :real-seconds (- finished started))))))
+          (when (and process (not reaped-p))
+            (execute--terminate-process process)))))))
 
 (defun run-sandboxed
     (program arguments

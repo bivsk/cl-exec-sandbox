@@ -404,6 +404,62 @@ host. They do not verify that macOS enforces the profile."
                  "deadline supervision returns promptly"))
   nil)
 
+(defun test-interrupted-execution-cleanup ()
+  "Test a nonlocal exit terminates and reaps the launched process."
+  (let* ((root (tests--temporary-root))
+         (started (merge-pathnames "started" root))
+         (finished (merge-pathnames "finished" root))
+         (thread nil)
+         (interrupted-p nil))
+    (unwind-protect
+         (progn
+           (setf thread
+                 (sb-thread:make-thread
+                  (lambda ()
+                    (handler-case
+                        (run-sandboxed
+                         "/bin/sh"
+                         (list
+                          "-c"
+                          (format nil
+                                  "printf started > ~A; sleep 1; printf finished > ~A"
+                                  (uiop:escape-shell-token
+                                   (uiop:native-namestring started))
+                                  (uiop:escape-shell-token
+                                   (uiop:native-namestring finished))))
+                         :policy (external-sandbox-policy))
+                      (serious-condition ()
+                        (setf interrupted-p t))))
+                  :name "cl-exec-sandbox interruption test"))
+           (test-assert
+            (loop repeat 200
+                  when (probe-file started)
+                    return t
+                  do (sleep 0.01)
+                  finally (return nil))
+            "the interrupted command starts before cancellation")
+           (sb-thread:interrupt-thread
+            thread
+            (lambda ()
+              (error "Interrupt sandbox execution for cleanup testing.")))
+           (sb-thread:join-thread thread)
+           (setf thread nil)
+           (test-assert interrupted-p
+                        "the caller observes its nonlocal execution exit")
+           (sleep 1.2)
+           (test-assert (not (probe-file finished))
+                        "the interrupted command cannot continue after cleanup"))
+      (when (and thread (sb-thread:thread-alive-p thread))
+        (ignore-errors
+          (sb-thread:interrupt-thread
+           thread
+           (lambda ()
+             (error "Stop interrupted execution test cleanup."))))
+        (ignore-errors (sb-thread:join-thread thread :default nil)))
+      (uiop:delete-directory-tree root :validate t
+                                       :if-does-not-exist :ignore)))
+  nil)
+
 (defun test-merged-output ()
   "Test callers can retain the original ordering of standard output and error."
   (let ((result
@@ -572,6 +628,7 @@ host. They do not verify that macOS enforces the profile."
   (test-unrestricted-filesystem-with-isolated-network)
   (test-external-execution-context)
   (test-timeout)
+  (test-interrupted-execution-cleanup)
   (test-merged-output)
   (test-output-capture-limits)
   (test-isolated-network-seccomp)
