@@ -88,8 +88,9 @@
     (cons (intern (string-upcase (subseq entry 0 separator)) :keyword)
           (subseq entry (1+ separator)))))
 
-(defun execute--launch-plan (plan input output-path error-path merge-output-p)
-  "Launch PLAN with INPUT and redirected output paths."
+(defun execute--launch-plan
+    (plan input output-path error-path merge-output-p ownership-function)
+  "Launch PLAN and publish its process through OWNERSHIP-FUNCTION."
   (let ((arguments
           (list :input input
                 :output output-path
@@ -102,10 +103,17 @@
                     (list :env
                           (mapcar #'execute--environment-entry->cons
                                   (sandbox-plan-environment plan))))))
-    (apply #'uiop:launch-program
-           (cons (uiop:native-namestring (sandbox-plan-program plan))
-                 (sandbox-plan-arguments plan))
-           arguments)))
+    (flet ((launch ()
+             (apply #'uiop:launch-program
+                    (cons (uiop:native-namestring
+                           (sandbox-plan-program plan))
+                          (sandbox-plan-arguments plan))
+                    arguments)))
+      #+sbcl
+      (sb-sys:without-interrupts
+        (funcall ownership-function (launch)))
+      #-sbcl
+      (funcall ownership-function (launch)))))
 
 (defun execute--terminate-process (process)
   "Urgently terminate and reap PROCESS after an interrupted execution."
@@ -128,18 +136,21 @@
             (timed-out-p nil))
         (unwind-protect
              (progn
-               (setf process
-                     (handler-case
-                         (execute--launch-plan plan input output-path error-path
-                                               merge-output-p)
-                       (error (condition)
-                         (error 'sandbox-execution-error
-                                :message
-                                (format nil "Could not launch sandbox: ~A" condition)
-                                :command
-                                (cons (uiop:native-namestring
-                                       (sandbox-plan-program plan))
-                                      (sandbox-plan-arguments plan))))))
+               (handler-case
+                   (execute--launch-plan
+                    plan input output-path error-path merge-output-p
+                    (lambda (launched-process)
+                      (setf process launched-process)))
+                 (error (condition)
+                   (error 'sandbox-execution-error
+                          :message
+                          (format nil
+                                  "Could not launch sandbox: ~A"
+                                  condition)
+                          :command
+                          (cons (uiop:native-namestring
+                                 (sandbox-plan-program plan))
+                                (sandbox-plan-arguments plan)))))
                (loop while (uiop:process-alive-p process)
                      for elapsed = (- (/ (get-internal-real-time)
                                          (coerce internal-time-units-per-second

@@ -460,6 +460,70 @@ host. They do not verify that macOS enforces the profile."
                                        :if-does-not-exist :ignore)))
   nil)
 
+(defun test-interrupted-launch-ownership ()
+  "Test cancellation cannot outrun ownership of a newly launched process."
+  (let* ((root (tests--temporary-root))
+         (finished (merge-pathnames "finished" root))
+         (launch-entered (sb-thread:make-semaphore))
+         (launch-release (sb-thread:make-semaphore))
+         (launch-function
+           (symbol-function 'cl-exec-sandbox::execute--launch-plan))
+         (thread nil)
+         (interrupted-p nil))
+    (unwind-protect
+         (progn
+           (setf (symbol-function 'cl-exec-sandbox::execute--launch-plan)
+                 (lambda (&rest arguments)
+                   (let ((process (apply launch-function arguments)))
+                     (sb-thread:signal-semaphore launch-entered)
+                     (sb-thread:wait-on-semaphore launch-release)
+                     process)))
+           (setf thread
+                 (sb-thread:make-thread
+                  (lambda ()
+                    (handler-case
+                        (run-sandboxed
+                         "/bin/sh"
+                         (list
+                          "-c"
+                          (format nil
+                                  "sleep 0.2; printf finished > ~A"
+                                  (uiop:escape-shell-token
+                                   (uiop:native-namestring finished))))
+                         :policy (external-sandbox-policy))
+                      (serious-condition ()
+                        (setf interrupted-p t))))
+                  :name "cl-exec-sandbox launch ownership test"))
+           (test-assert
+            (sb-thread:wait-on-semaphore launch-entered :timeout 2)
+            "the ownership test pauses after the process launch")
+           (sb-thread:interrupt-thread
+            thread
+            (lambda ()
+              (error "Interrupt the process ownership handoff.")))
+           (sb-thread:signal-semaphore launch-release)
+           (sb-thread:join-thread thread)
+           (setf thread nil)
+           (test-assert interrupted-p
+                        "the launch ownership interruption reaches its caller")
+           (sleep 0.4)
+           (test-assert
+            (not (probe-file finished))
+            "an interrupted ownership handoff still terminates the process"))
+      (setf (symbol-function 'cl-exec-sandbox::execute--launch-plan)
+            launch-function)
+      (sb-thread:signal-semaphore launch-release)
+      (when (and thread (sb-thread:thread-alive-p thread))
+        (ignore-errors
+          (sb-thread:interrupt-thread
+           thread
+           (lambda ()
+             (error "Stop launch ownership test cleanup."))))
+        (ignore-errors (sb-thread:join-thread thread :default nil)))
+      (uiop:delete-directory-tree root :validate t
+                                       :if-does-not-exist :ignore)))
+  nil)
+
 (defun test-merged-output ()
   "Test callers can retain the original ordering of standard output and error."
   (let ((result
@@ -629,6 +693,7 @@ host. They do not verify that macOS enforces the profile."
   (test-external-execution-context)
   (test-timeout)
   (test-interrupted-execution-cleanup)
+  (test-interrupted-launch-ownership)
   (test-merged-output)
   (test-output-capture-limits)
   (test-isolated-network-seccomp)
