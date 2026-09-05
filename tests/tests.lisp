@@ -392,6 +392,19 @@ host. They do not verify that macOS enforces the profile."
       (uiop:delete-directory-tree root :validate t :if-does-not-exist :ignore)))
   nil)
 
+(defun test-process-group-platform-support ()
+  "Test direct supervision covers every supported POSIX release target."
+  (dolist (feature '(:linux :darwin :freebsd :netbsd :openbsd))
+    (let ((*features* (list feature)))
+      (test-assert
+       (cl-exec-sandbox::posix--process-group-supported-p)
+       (format nil "~A enables process-group supervision" feature))))
+  (let ((*features* '(:windows)))
+    (test-assert
+     (not (cl-exec-sandbox::posix--process-group-supported-p))
+     "Windows does not claim POSIX process-group supervision"))
+  nil)
+
 (defun test-timeout ()
   "Test deadline supervision terminates a sandbox process."
   (let ((result
@@ -717,6 +730,7 @@ host. They do not verify that macOS enforces the profile."
   (test-deny-glob)
   (test-unrestricted-filesystem-with-isolated-network)
   (test-external-execution-context)
+  (test-process-group-platform-support)
   (test-timeout)
   (test-direct-timeout-descendant-cleanup)
   (test-interrupted-execution-cleanup)

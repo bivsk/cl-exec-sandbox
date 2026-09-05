@@ -41,7 +41,7 @@
 (defun backend--direct-plan
     (program arguments cwd environment clear-environment-p)
   "Return a direct plan with process-group supervision on supported hosts."
-  (if (or (member :linux *features*) (member :darwin *features*))
+  (if (posix--process-group-supported-p)
       (posix--process-group-plan program arguments cwd environment clear-environment-p)
       (make-instance 'sandbox-plan
                      :program program

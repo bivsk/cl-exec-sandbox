@@ -2,6 +2,11 @@
 
 ;;;; -- Process Group Supervision --
 
+(defun posix--process-group-supported-p ()
+  "Return true on supported POSIX hosts with process-group supervision."
+  (not (null (intersection '(:linux :darwin :freebsd :netbsd :openbsd)
+                           *features*))))
+
 (defun posix--find-process-group-helper ()
   "Return the installed process-group launcher pathname, or NIL."
   (let* ((override (uiop:getenv "CL_EXEC_SANDBOX_PROCESS_GROUP_HELPER"))
