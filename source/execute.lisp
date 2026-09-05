@@ -115,10 +115,14 @@
       #-sbcl
       (funcall ownership-function (launch)))))
 
-(defun execute--terminate-process (process)
-  "Urgently terminate and reap PROCESS after an interrupted execution."
+(defun execute--terminate-process (plan process)
+  "Urgently terminate and reap PLAN's native process scope."
   (when (ignore-errors (uiop:process-alive-p process))
-    (ignore-errors (uiop:terminate-process process :urgent t)))
+    (ecase (sandbox-plan-termination-scope plan)
+      (:process
+       (ignore-errors (uiop:terminate-process process :urgent t)))
+      (:process-group
+       (ignore-errors (posix--terminate-process-group process)))))
   (ignore-errors (uiop:wait-process process))
   nil)
 
@@ -158,7 +162,7 @@
                                       started)
                      do (when (and timeout (>= elapsed timeout))
                           (setf timed-out-p t)
-                          (uiop:terminate-process process :urgent t)
+                          (execute--terminate-process plan process)
                           (return))
                         (sleep 0.01))
                (let ((exit-code (uiop:wait-process process))
@@ -180,7 +184,7 @@
                       :timed-out-p timed-out-p
                       :real-seconds (- finished started))))))
           (when (and process (not reaped-p))
-            (execute--terminate-process process)))))))
+            (execute--terminate-process plan process)))))))
 
 (defun run-sandboxed
     (program arguments

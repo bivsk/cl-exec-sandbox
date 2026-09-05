@@ -6,6 +6,14 @@ source_root=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 
 mkdir -p "$source_root/build"
 
-exec cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
-  "$source_root/helper/cl-exec-sandbox-helper.c" \
-  -o "$source_root/build/cl-exec-sandbox-helper"
+compiler=${CC:-cc}
+
+"$compiler" -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+  "$source_root/helper/cl-exec-sandbox-process-group.c" \
+  -o "$source_root/build/cl-exec-sandbox-process-group"
+
+if [[ $(uname -s) == Linux ]]; then
+  "$compiler" -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+    "$source_root/helper/cl-exec-sandbox-helper.c" \
+    -o "$source_root/build/cl-exec-sandbox-helper"
+fi

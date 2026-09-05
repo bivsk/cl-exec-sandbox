@@ -79,9 +79,11 @@ Seatbelt profile translation is a pure function of a policy, so its tests run
 on any host. They assert the generated profile text.
 
 Applications which vendor this system should run =scripts/build-helper= during
-their build and ship =build/cl-exec-sandbox-helper= beside the Lisp sources.
-Set =CL_EXEC_SANDBOX_HELPER= to an alternate absolute helper path when the
-installed layout differs. Packaged Bubblewrap installations outside =/usr/bin=
-and =/bin= can set =CL_EXEC_SANDBOX_BWRAP= to its absolute executable path.
+their build and ship =build/cl-exec-sandbox-process-group= beside the Lisp
+sources. Linux applications using restricted networking must also ship
+=build/cl-exec-sandbox-helper=. Set =CL_EXEC_SANDBOX_PROCESS_GROUP_HELPER= or
+=CL_EXEC_SANDBOX_HELPER= to alternate absolute helper paths when the installed
+layout differs. Packaged Bubblewrap installations outside =/usr/bin= and =/bin=
+can set =CL_EXEC_SANDBOX_BWRAP= to its absolute executable path.
 
 Part of the [[https://www.lambda-symbolics.com/libraries][Lambda Symbolics library shelf]].

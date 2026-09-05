@@ -404,6 +404,32 @@ host. They do not verify that macOS enforces the profile."
                  "deadline supervision returns promptly"))
   nil)
 
+(defun test-direct-timeout-descendant-cleanup ()
+  "Test direct timeout kills a background descendant process."
+  (let* ((root (tests--temporary-root))
+         (finished (merge-pathnames "finished" root))
+         (result
+           (run-sandboxed
+            "/bin/sh"
+            (list
+             "-c"
+             (format nil
+                     "(sleep 0.3; printf finished > ~A) & wait"
+                     (uiop:escape-shell-token
+                      (uiop:native-namestring finished))))
+            :policy (unrestricted-sandbox-policy)
+            :timeout 0.05)))
+    (unwind-protect
+         (progn
+           (sleep 0.5)
+           (test-assert (sandbox-result-timed-out-p result)
+                        "a direct command exceeding its deadline is marked timed out")
+           (test-assert (not (probe-file finished))
+                        "a background descendant cannot survive direct timeout"))
+      (uiop:delete-directory-tree root :validate t
+                                       :if-does-not-exist :ignore)))
+  nil)
+
 (defun test-interrupted-execution-cleanup ()
   "Test a nonlocal exit terminates and reaps the launched process."
   (let* ((root (tests--temporary-root))
@@ -422,12 +448,12 @@ host. They do not verify that macOS enforces the profile."
                          (list
                           "-c"
                           (format nil
-                                  "printf started > ~A; sleep 1; printf finished > ~A"
+                                  "printf started > ~A; (sleep 1; printf finished > ~A) & wait"
                                   (uiop:escape-shell-token
                                    (uiop:native-namestring started))
                                   (uiop:escape-shell-token
                                    (uiop:native-namestring finished))))
-                         :policy (external-sandbox-policy))
+                         :policy (unrestricted-sandbox-policy))
                       (serious-condition ()
                         (setf interrupted-p t))))
                   :name "cl-exec-sandbox interruption test"))
@@ -692,6 +718,7 @@ host. They do not verify that macOS enforces the profile."
   (test-unrestricted-filesystem-with-isolated-network)
   (test-external-execution-context)
   (test-timeout)
+  (test-direct-timeout-descendant-cleanup)
   (test-interrupted-execution-cleanup)
   (test-interrupted-launch-ownership)
   (test-merged-output)

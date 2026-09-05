@@ -28,9 +28,15 @@
     :reader sandbox-plan-working-directory
     :type pathname
     :documentation "The host working directory used for a direct launch.")
-   (cleanup-paths
-    :initarg :cleanup-paths
-    :reader sandbox-plan-cleanup-paths
-    :type list
-    :documentation "Transient host paths removed after execution when still safe."))
+    (cleanup-paths
+     :initarg :cleanup-paths
+     :reader sandbox-plan-cleanup-paths
+     :type list
+     :documentation "Transient host paths removed after execution when still safe.")
+    (termination-scope
+     :initarg :termination-scope
+     :initform :process
+     :reader sandbox-plan-termination-scope
+     :type (member :process :process-group)
+     :documentation "The native process scope terminated on timeout or cancellation."))
   (:documentation "A fully validated native launch plan and its cleanup obligations."))

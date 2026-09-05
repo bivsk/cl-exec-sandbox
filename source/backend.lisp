@@ -38,6 +38,20 @@
 
 ;;;; -- Plan Dispatch --
 
+(defun backend--direct-plan
+    (program arguments cwd environment clear-environment-p)
+  "Return a direct plan with process-group supervision on supported hosts."
+  (if (or (member :linux *features*) (member :darwin *features*))
+      (posix--process-group-plan program arguments cwd environment clear-environment-p)
+      (make-instance 'sandbox-plan
+                     :program program
+                     :arguments arguments
+                     :environment environment
+                     :environment-provided-p (or (not (null environment))
+                                                 clear-environment-p)
+                     :working-directory cwd
+                     :cleanup-paths nil)))
+
 (defun sandbox-build-plan
     (program arguments
      &key policy working-directory environment clear-environment-p)
@@ -64,24 +78,12 @@
                             :command (cons program arguments)))))))
     (cond
       ((eq (sandbox-policy-filesystem-kind policy) :external)
-       (make-instance 'sandbox-plan
-                      :program program-path
-                      :arguments arguments
-                      :environment environment
-                      :environment-provided-p (or (not (null environment))
-                                                  clear-environment-p)
-                      :working-directory cwd
-                      :cleanup-paths nil))
+       (backend--direct-plan program-path arguments cwd environment
+                             clear-environment-p))
       ((and (eq (sandbox-policy-filesystem-kind policy) :unrestricted)
             (eq (sandbox-policy-network policy) :enabled))
-       (make-instance 'sandbox-plan
-                      :program program-path
-                      :arguments arguments
-                      :environment environment
-                      :environment-provided-p (or (not (null environment))
-                                                  clear-environment-p)
-                      :working-directory cwd
-                      :cleanup-paths nil))
+       (backend--direct-plan program-path arguments cwd environment
+                             clear-environment-p))
       ((member :linux *features*)
        (linux--bubblewrap-plan program-path arguments policy cwd
                                environment clear-environment-p))

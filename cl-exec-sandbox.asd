@@ -4,7 +4,7 @@
   :license "ISC"
   :version "0.1.0"
   :serial t
-  :depends-on ()
+  :depends-on (#:sb-posix)
   :components ((:module "source"
                 :serial t
                 :components ((:file "package")
@@ -13,6 +13,7 @@
                              (:file "paths")
                              (:file "rules")
                              (:file "plan")
+                             (:file "posix")
                              (:file "linux")
                              (:file "macos")
                              (:file "backend")
