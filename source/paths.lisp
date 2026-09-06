@@ -32,22 +32,13 @@
 
 (defun path--executable-file-p (path)
   "Return true when PATH names an executable regular file."
-  (let ((test-program
-          (cond
-            ((probe-file #P"/usr/bin/test") "/usr/bin/test")
-            ((probe-file #P"/bin/test") "/bin/test")
-            (t nil))))
-    (and test-program
-         (probe-file path)
-         (not (uiop:directory-pathname-p (probe-file path)))
-         (zerop
-          (nth-value
-           2
-           (uiop:run-program
-            (list test-program "-x" (uiop:native-namestring path))
-            :ignore-error-status t
-            :output nil
-            :error-output nil))))))
+  (let ((native-path (uiop:native-namestring path)))
+    (handler-case
+        (let ((mode (sb-posix:stat-mode (sb-posix:stat native-path))))
+          (and (sb-posix:s-isreg mode)
+               (zerop (sb-posix:access native-path sb-posix:x-ok))))
+      (sb-posix:syscall-error ()
+        nil))))
 
 (defun path--directories ()
   "Return PATH entries as absolute directory pathnames."
